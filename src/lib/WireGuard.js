@@ -142,8 +142,8 @@ ${client.preSharedKey ? `PresharedKey = ${client.preSharedKey}\n` : ''
       id: clientId,
       name: client.name,
       enabled: client.enabled,
-      address: client.address,
-      publicKey: client.publicKey,
+        address: client.address,
+        publicKey: client.publicKey,
       createdAt: new Date(client.createdAt),
       updatedAt: new Date(client.updatedAt),
       allowedIPs: client.allowedIPs,
@@ -198,7 +198,10 @@ ${client.preSharedKey ? `PresharedKey = ${client.preSharedKey}\n` : ''
     return client;
   }
 
-  async getClientConfiguration({ clientId }) {
+  async getClientConfiguration({ clientId, dns = WG_DEFAULT_DNS }) {
+    // Regular expression for IPv4
+    const ipv4Pattern = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+
     const config = await this.getConfig();
     const client = await this.getClient({ clientId });
 
@@ -206,7 +209,7 @@ ${client.preSharedKey ? `PresharedKey = ${client.preSharedKey}\n` : ''
 [Interface]
 PrivateKey = ${client.privateKey ? `${client.privateKey}` : 'REPLACE_ME'}
 Address = ${client.address}/24
-${WG_DEFAULT_DNS ? `DNS = ${WG_DEFAULT_DNS}\n` : ''}\
+${ipv4Pattern.test(dns) ? `DNS = ${dns}\n` : `DNS = ${WG_DEFAULT_DNS}\n`}\
 ${WG_MTU ? `MTU = ${WG_MTU}\n` : ''}\
 
 [Peer]
@@ -230,6 +233,7 @@ Endpoint = ${WG_HOST}:${WG_CONFIG_PORT}`;
       throw new Error('Missing: Name');
     }
 
+    this.cleanUpClients();
     const config = await this.getConfig();
 
     const privateKey = await Util.exec('wg genkey');
@@ -256,7 +260,8 @@ Endpoint = ${WG_HOST}:${WG_CONFIG_PORT}`;
     }
 
     // Create Client
-    const id = crypto.randomUUID();
+    // const id = crypto.randomUUID();
+    const id = name ?? crypto.randomUUID(); // TODO: Hack hardcode
     const client = {
       id,
       name,
@@ -353,4 +358,46 @@ Endpoint = ${WG_HOST}:${WG_CONFIG_PORT}`;
     await Util.exec('wg-quick down wg0').catch(() => {});
   }
 
+  async cleanUpClients() {
+    const config = await this.getConfig();
+    const clients = config.clients;
+    const clientIds = Object.keys(clients);
+
+    const now = new Date();
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(now.getDate() - 7);
+
+    let oldestClientId = null;
+    let oldestClientDate = now;
+
+    for (const clientId of clientIds) {
+      const client = clients[clientId];
+      const createdAt = new Date(client.createdAt);
+
+      // Find the oldest client
+      if (createdAt < oldestClientDate) {
+        oldestClientDate = createdAt;
+        oldestClientId = clientId;
+      }
+    }
+
+    if (clientIds.length > 250) {
+      // Delete the oldest client if there are more than 250 clients
+      if (oldestClientId) {
+        delete clients[oldestClientId];
+      }
+    } else {
+      // Delete any client older than 7 days
+      for (const clientId of clientIds) {
+        const client = clients[clientId];
+        const createdAt = new Date(client.createdAt);
+
+        if (createdAt < sevenDaysAgo) {
+          delete clients[clientId];
+        }
+      }
+    }
+
+    await this.saveConfig();
+  }
 };

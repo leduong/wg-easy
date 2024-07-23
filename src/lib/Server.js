@@ -177,16 +177,17 @@ module.exports = class Server {
         setHeader(event, 'Content-Type', 'image/svg+xml');
         return svg;
       }))
-      .get('/api/wireguard/client/:clientId/configuration', defineEventHandler(async (event) => {
+      .get('/api/wireguard/client/:clientId/:dns/configuration', defineEventHandler(async (event) => {
         const clientId = getRouterParam(event, 'clientId');
+        const dns = getRouterParam(event, 'dns');
         const client = await WireGuard.getClient({ clientId });
-        const config = await WireGuard.getClientConfiguration({ clientId });
+        const config = await WireGuard.getClientConfiguration({ clientId, dns });
         const configName = client.name
           .replace(/[^a-zA-Z0-9_=+.-]/g, '-')
           .replace(/(-{2,}|-$)/g, '-')
           .replace(/-$/, '')
           .substring(0, 32);
-        setHeader(event, 'Content-Disposition', `attachment; filename="${configName || clientId}.conf"`);
+        // setHeader(event, 'Content-Disposition', `attachment; filename="${configName || clientId}.conf"`);
         setHeader(event, 'Content-Type', 'text/plain');
         return config;
       }))

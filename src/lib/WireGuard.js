@@ -198,7 +198,7 @@ ${client.preSharedKey ? `PresharedKey = ${client.preSharedKey}\n` : ''
     return client;
   }
 
-  async getClientConfiguration({ clientId }) {
+  async getClientConfiguration({ clientId, dns=WG_DEFAULT_DNS }) {
     const config = await this.getConfig();
     const client = await this.getClient({ clientId });
 
@@ -206,7 +206,7 @@ ${client.preSharedKey ? `PresharedKey = ${client.preSharedKey}\n` : ''
 [Interface]
 PrivateKey = ${client.privateKey ? `${client.privateKey}` : 'REPLACE_ME'}
 Address = ${client.address}/24
-${WG_DEFAULT_DNS ? `DNS = ${WG_DEFAULT_DNS}\n` : ''}\
+${WG_DEFAULT_DNS ? `DNS = ${dns}\n` : ''}\
 ${WG_MTU ? `MTU = ${WG_MTU}\n` : ''}\
 
 [Peer]

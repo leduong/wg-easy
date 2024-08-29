@@ -25,6 +25,9 @@ const {
   WG_POST_DOWN,
 } = require('../config');
 
+// Regular expression for IPv4
+const ipv4Pattern = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+
 module.exports = class WireGuard {
 
   async __buildConfig() {
@@ -142,8 +145,8 @@ ${client.preSharedKey ? `PresharedKey = ${client.preSharedKey}\n` : ''
       id: clientId,
       name: client.name,
       enabled: client.enabled,
-        address: client.address,
-        publicKey: client.publicKey,
+      address: client.address,
+      publicKey: client.publicKey,
       createdAt: new Date(client.createdAt),
       updatedAt: new Date(client.updatedAt),
       allowedIPs: client.allowedIPs,
@@ -198,10 +201,7 @@ ${client.preSharedKey ? `PresharedKey = ${client.preSharedKey}\n` : ''
     return client;
   }
 
-  async getClientConfiguration({ clientId, dns = WG_DEFAULT_DNS }) {
-    // Regular expression for IPv4
-    const ipv4Pattern = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-
+  async getClientConfiguration({ clientId }) {
     const config = await this.getConfig();
     const client = await this.getClient({ clientId });
 
@@ -209,7 +209,7 @@ ${client.preSharedKey ? `PresharedKey = ${client.preSharedKey}\n` : ''
 [Interface]
 PrivateKey = ${client.privateKey ? `${client.privateKey}` : 'REPLACE_ME'}
 Address = ${client.address}/24
-${ipv4Pattern.test(dns) ? `DNS = ${dns}\n` : `DNS = ${WG_DEFAULT_DNS}\n`}\
+${WG_DEFAULT_DNS ? `DNS = ${WG_DEFAULT_DNS}\n` : ''}\
 ${WG_MTU ? `MTU = ${WG_MTU}\n` : ''}\
 
 [Peer]
@@ -260,8 +260,7 @@ Endpoint = ${WG_HOST}:${WG_CONFIG_PORT}`;
     }
 
     // Create Client
-    // const id = crypto.randomUUID();
-    const id = name ?? crypto.randomUUID(); // TODO: Hack hardcode
+    const id = crypto.randomUUID();
     const client = {
       id,
       name,
@@ -399,5 +398,76 @@ Endpoint = ${WG_HOST}:${WG_CONFIG_PORT}`;
     }
 
     await this.saveConfig();
+  }
+
+  async getClientByName(name) {
+    const config = await this.getConfig();
+    const clients = Object.entries(config.clients).map(([clientId, client]) => ({
+      id: clientId,
+      name: client.name,
+      enabled: client.enabled,
+      address: client.address,
+      publicKey: client.publicKey,
+      createdAt: new Date(client.createdAt),
+      updatedAt: new Date(client.updatedAt),
+      allowedIPs: client.allowedIPs,
+      downloadableConfig: 'privateKey' in client,
+      persistentKeepalive: null,
+      latestHandshakeAt: null,
+      transferRx: null,
+      transferTx: null,
+    }));
+
+    // Loop WireGuard status
+    const dump = await Util.exec('wg show wg0 dump', {
+      log: false,
+    });
+    dump
+      .trim()
+      .split('\n')
+      .slice(1)
+      .forEach((line) => {
+        const [
+          publicKey,
+          preSharedKey, // eslint-disable-line no-unused-vars
+          endpoint, // eslint-disable-line no-unused-vars
+          allowedIps, // eslint-disable-line no-unused-vars
+          latestHandshakeAt,
+          transferRx,
+          transferTx,
+          persistentKeepalive,
+        ] = line.split('\t');
+
+        const client = clients.find((client) => client.publicKey === publicKey);
+        if (!client) return;
+
+        client.latestHandshakeAt = latestHandshakeAt === '0'
+          ? null
+          : new Date(Number(`${latestHandshakeAt}000`));
+        client.transferRx = Number(transferRx);
+        client.transferTx = Number(transferTx);
+        client.persistentKeepalive = persistentKeepalive;
+      });
+
+    return clients.filter((x) => x.name === name);
+  }
+
+  async createClientDNS({ clientId, dns = WG_DEFAULT_DNS }) {
+    const config = await this.getConfig();
+    const client = await this.createClient({ name: clientId });
+
+    return `
+[Interface]
+PrivateKey = ${client.privateKey ? `${client.privateKey}` : 'REPLACE_ME'}
+Address = ${client.address}/24
+${ipv4Pattern.test(dns) ? `DNS = ${dns}\n` : `DNS = ${WG_DEFAULT_DNS}\n`}\
+${WG_MTU ? `MTU = ${WG_MTU}\n` : ''}\
+
+[Peer]
+PublicKey = ${config.server.publicKey}
+${client.preSharedKey ? `PresharedKey = ${client.preSharedKey}\n` : ''
+}AllowedIPs = ${WG_ALLOWED_IPS}
+PersistentKeepalive = ${WG_PERSISTENT_KEEPALIVE}
+Endpoint = ${WG_HOST}:${WG_CONFIG_PORT}`;
   }
 };

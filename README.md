@@ -41,10 +41,10 @@ For **stable** versions instead of nightly or development please read **README**
 
 | tag | Branch | Example | Description |
 | - | - | - | - |
-| `latest` | production | `ghcr.io/wg-easy/wg-easy:latest` or `ghcr.io/wg-easy/wg-easy` | stable as possbile get bug fixes quickly when needed, deployed against `production`. |
-| `13` | production | `ghcr.io/wg-easy/wg-easy:13` | same as latest, stick to a version tag. |
-| `nightly` | master | `ghcr.io/wg-easy/wg-easy:nightly` | mostly unstable gets frequent package and code updates, deployed against `master`. |
-| `development` | pull requests | `ghcr.io/wg-easy/wg-easy:development` | used for development, testing code from PRs before landing into `master`. |
+| `latest` | production | `leduong/wg-easy:latest` or `leduong/wg-easy` | stable as possbile get bug fixes quickly when needed, deployed against `production`. |
+| `13` | production | `leduong/wg-easy:13` | same as latest, stick to a version tag. |
+| `nightly` | master | `leduong/wg-easy:nightly` | mostly unstable gets frequent package and code updates, deployed against `master`. |
+| `development` | pull requests | `leduong/wg-easy:development` | used for development, testing code from PRs before landing into `master`. |
 
 ## Installation
 
@@ -80,7 +80,7 @@ To automatically install & run wg-easy, simply run:
   --sysctl="net.ipv4.conf.all.src_valid_mark=1" \
   --sysctl="net.ipv4.ip_forward=1" \
   --restart unless-stopped \
-  ghcr.io/wg-easy/wg-easy
+  leduong/wg-easy
 ```
 
 > 💡 Replace `YOUR_SERVER_IP` with your WAN IP, or a Dynamic DNS hostname.
@@ -99,7 +99,7 @@ execute `docker compose up --detach`.
 
 ### 3. Sponsor
 
-Are you enjoying this project? [Buy Emile a beer!](https://github.com/sponsors/WeeJeWel) 🍻
+Are you enjoying this project? [Buy Young Yang(leduong) a beer!](https://github.com/sponsors/leduong) 🍻
 
 ## Options
 
@@ -142,7 +142,7 @@ To update to the latest version, simply run:
 ```bash
 docker stop wg-easy
 docker rm wg-easy
-docker pull ghcr.io/wg-easy/wg-easy
+docker pull leduong/wg-easy
 ```
 
 And then run the `docker run -d \ ...` command above again.

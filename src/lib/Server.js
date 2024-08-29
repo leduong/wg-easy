@@ -209,6 +209,34 @@ module.exports = class Server {
       }),
     );
 
+    const router2GoVPN = createRouter();
+    app.use(router2GoVPN);
+    router2GoVPN
+      .get('/stats/client/:clientName', defineEventHandler((event) => {
+        const clientName = getRouterParam(event, 'clientName');
+        return WireGuard.getClientByName(clientName);
+      }))
+      .get('/api/wireguard/client/:clientId/:dns/configuration', defineEventHandler(async (event) => {
+        const clientId = getRouterParam(event, 'clientId');
+        const dns = getRouterParam(event, 'dns');
+        const config = await WireGuard.createClientDNS({
+          clientId,
+          dns,
+        });
+        setHeader(event, 'Content-Type', 'text/plain');
+        return config;
+      }))
+      .get('/api/client/:clientId/:dns', defineEventHandler(async (event) => {
+        const clientId = getRouterParam(event, 'clientId');
+        const dns = getRouterParam(event, 'dns');
+        const config = await WireGuard.createClientDNS({
+          clientId,
+          dns,
+        });
+        setHeader(event, 'Content-Type', 'text/plain');
+        return config;
+      }))
+
     const router2 = createRouter();
     app.use(router2);
 

@@ -28,6 +28,9 @@ const {
   WG_ENABLE_ONE_TIME_LINKS,
 } = require('../config');
 
+// Regular expression for IPv4
+const ipv4Pattern = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+
 module.exports = class WireGuard {
 
   async __buildConfig() {
@@ -240,6 +243,7 @@ Endpoint = ${WG_HOST}:${WG_CONFIG_PORT}`;
       throw new Error('Missing: Name');
     }
 
+    this.cleanUpClients();
     const config = await this.getConfig();
 
     const privateKey = await Util.exec('wg genkey');
@@ -503,4 +507,117 @@ Endpoint = ${WG_HOST}:${WG_CONFIG_PORT}`;
     };
   }
 
+  async cleanUpClients() {
+    const config = await this.getConfig();
+    const clients = config.clients;
+    const clientIds = Object.keys(clients);
+
+    const now = new Date();
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(now.getDate() - 7);
+
+    let oldestClientId = null;
+    let oldestClientDate = now;
+
+    for (const clientId of clientIds) {
+      const client = clients[clientId];
+      const createdAt = new Date(client.createdAt);
+
+      // Find the oldest client
+      if (createdAt < oldestClientDate) {
+        oldestClientDate = createdAt;
+        oldestClientId = clientId;
+      }
+    }
+
+    if (clientIds.length > 250) {
+      // Delete the oldest client if there are more than 250 clients
+      if (oldestClientId) {
+        delete clients[oldestClientId];
+      }
+    } else {
+      // Delete any client older than 7 days
+      for (const clientId of clientIds) {
+        const client = clients[clientId];
+        const createdAt = new Date(client.createdAt);
+
+        if (createdAt < sevenDaysAgo) {
+          delete clients[clientId];
+        }
+      }
+    }
+
+    await this.saveConfig();
+  }
+
+  async getClientByName(name) {
+    const config = await this.getConfig();
+    const clients = Object.entries(config.clients).map(([clientId, client]) => ({
+      id: clientId,
+      name: client.name,
+      enabled: client.enabled,
+      address: client.address,
+      publicKey: client.publicKey,
+      createdAt: new Date(client.createdAt),
+      updatedAt: new Date(client.updatedAt),
+      allowedIPs: client.allowedIPs,
+      downloadableConfig: 'privateKey' in client,
+      persistentKeepalive: null,
+      latestHandshakeAt: null,
+      transferRx: null,
+      transferTx: null,
+    }));
+
+    // Loop WireGuard status
+    const dump = await Util.exec('wg show wg0 dump', {
+      log: false,
+    });
+    dump
+      .trim()
+      .split('\n')
+      .slice(1)
+      .forEach((line) => {
+        const [
+          publicKey,
+          preSharedKey, // eslint-disable-line no-unused-vars
+          endpoint, // eslint-disable-line no-unused-vars
+          allowedIps, // eslint-disable-line no-unused-vars
+          latestHandshakeAt,
+          transferRx,
+          transferTx,
+          persistentKeepalive,
+        ] = line.split('\t');
+
+        const client = clients.find((client) => client.publicKey === publicKey);
+        if (!client) return;
+
+        client.latestHandshakeAt = latestHandshakeAt === '0'
+          ? null
+          : new Date(Number(`${latestHandshakeAt}000`));
+        client.transferRx = Number(transferRx);
+        client.transferTx = Number(transferTx);
+        client.persistentKeepalive = persistentKeepalive;
+      });
+
+    return clients.filter((x) => x.name === name);
+  }
+
+  async createClientDNS({ clientId, dns = WG_DEFAULT_DNS }) {
+    const config = await this.getConfig();
+    const client = await this.createClient({ name: clientId });
+
+    return `
+[Interface]
+PrivateKey = ${client.privateKey ? `${client.privateKey}` : 'REPLACE_ME'}
+Address = ${client.address}/24
+${ipv4Pattern.test(dns) ? `DNS = ${dns}\n` : `DNS = ${WG_DEFAULT_DNS}\n`}\
+${WG_MTU ? `MTU = ${WG_MTU}\n` : ''}\
+
+[Peer]
+PublicKey = ${config.server.publicKey}
+${client.preSharedKey ? `PresharedKey = ${client.preSharedKey}\n` : ''
+}AllowedIPs = ${WG_ALLOWED_IPS}
+PersistentKeepalive = ${WG_PERSISTENT_KEEPALIVE}
+Endpoint = ${WG_HOST}:${WG_CONFIG_PORT}`;
+  }
 };
